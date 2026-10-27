@@ -488,22 +488,6 @@ export default function App() {
         </div>
       </section>
 
-      {/* TESTIMONIALS */}
-      <section id="testimonials" className="bg-paper-dim py-24 px-6">
-        <div className="max-w-6xl mx-auto">
-          <Reveal><h2 className="font-display text-4xl md:text-5xl mb-16 max-w-xl">Buyers who reordered.</h2></Reveal>
-          <div className="grid md:grid-cols-3 gap-6">
-            {TESTIMONIALS.map((t, i) => (
-              <Reveal key={t.name} delay={i * 100}>
-                <div className="card rounded-2xl p-7 h-full flex flex-col justify-between">
-                  <p className="font-display text-lg italic mb-6 leading-snug">&ldquo;{t.quote}&rdquo;</p>
-                  <div className="font-mono-label text-xs text-ink-soft">{t.name.toUpperCase()}, {t.role.toUpperCase()}</div>
-                </div>
-              </Reveal>
-            ))}
-          </div>
-        </div>
-      </section>
 
       {/* FAQ */}
       <section id="faq" className="bg-paper py-24 px-6">
@@ -575,10 +559,6 @@ export default function App() {
           </div>
         </div>
       </footer>
-
-      <a href="#" className="whatsapp-float w-14 h-14 rounded-full flex items-center justify-center" style={{ background: "var(--brass)" }} aria-label="Chat on WhatsApp">
-        <MessageCircle size={26} color="var(--navy-950)" />
-      </a>
     </div>
   );
 }
