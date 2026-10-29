@@ -168,7 +168,7 @@ const Intro = () => (
       </div>
     </div>
 
-    <div className="ey-copy">
+    <div className="ey-copy mt-20">
       <h1>We export water bottles.</h1>
       <p>
         ExportYard ships bottled mineral water from Mumbai to ports around the world,
