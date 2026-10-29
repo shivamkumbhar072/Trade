@@ -175,7 +175,7 @@ const Intro = () => (
         in full-container loads with documents handled.
       </p>
       <div className="ey-actions">
-        <a href="#contact" className="ey-btn">Request a quote</a>
+        <a href="/enquiry" className="ey-btn">Request a Enquiry</a>
       </div>
     </div>
   </section>

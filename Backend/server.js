@@ -1,4 +1,3 @@
-
 const express = require("express");
 const cors = require("cors");
 require("dotenv").config();
@@ -6,6 +5,10 @@ require("dotenv").config();
 const mongoose = require("mongoose");
 const connectDB = require("./config/db");
 const userRoutes = require("./routes/userRoutes");
+const adminRoutes = require("./routes/adminRoutes");
+
+// ADD THIS
+const enquiryRoutes = require("./routes/enquiryRoutes");
 
 const app = express();
 
@@ -21,7 +24,6 @@ app.use(
 
 app.use(express.json({ limit: "10kb" }));
 
-// Homepage
 app.get("/", (req, res) => {
   res.json({
     success: true,
@@ -29,7 +31,6 @@ app.get("/", (req, res) => {
   });
 });
 
-// Health check
 app.get("/api/health", (req, res) => {
   res.status(200).json({
     success: true,
@@ -40,10 +41,12 @@ app.get("/api/health", (req, res) => {
   });
 });
 
-// User routes
 app.use("/api/users", userRoutes);
+app.use("/api/admin", adminRoutes);
 
-// Start server
+// ADD THIS
+app.use("/api/enquiries", enquiryRoutes);
+
 const startServer = async () => {
   try {
     await connectDB();

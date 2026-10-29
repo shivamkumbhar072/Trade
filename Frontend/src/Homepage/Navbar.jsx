@@ -1,30 +1,33 @@
+
 import { useEffect, useRef, useState } from "react";
 import { createPortal } from "react-dom";
 import { Menu, X, LogOut, Check } from "lucide-react";
 import { Link, useNavigate } from "react-router-dom";
 import { useAuth } from "../context/AuthContext.jsx";
 
-const SCROLL_OFFSET = 40; // px scrolled before the navbar gets its color
+const SCROLL_OFFSET = 40;
 
 const Navbar = () => {
   const [navOpen, setNavOpen] = useState(false);
   const [scrolled, setScrolled] = useState(false);
   const [confirmOpen, setConfirmOpen] = useState(false);
   const [toast, setToast] = useState(false);
+
   const cancelRef = useRef(null);
   const { user, isLoggedIn, logout } = useAuth();
   const navigate = useNavigate();
 
   const close = () => setNavOpen(false);
   const firstName = user?.name?.trim().split(/\s+/)[0] || "User";
+  const isAdmin = isLoggedIn && user?.role === "admin";
 
-  // opens the confirmation dialog instead of logging out right away
+  // Open the logout confirmation dialog
   function askLogout() {
     close();
     setConfirmOpen(true);
   }
 
-  // runs only after the user confirms
+  // Log out after confirmation
   function confirmLogout() {
     logout();
     setConfirmOpen(false);
@@ -32,16 +35,17 @@ const Navbar = () => {
     navigate("/", { replace: true });
   }
 
-  // transparent at the top, solid after scrolling
-  // (state only changes when the threshold is crossed, so this stays cheap)
+  // Transparent at the top, solid after scrolling
   useEffect(() => {
     const onScroll = () => setScrolled(window.scrollY > SCROLL_OFFSET);
+
     onScroll();
     window.addEventListener("scroll", onScroll, { passive: true });
+
     return () => window.removeEventListener("scroll", onScroll);
   }, []);
 
-  // close the mobile menu with Escape
+  // Close mobile menu with Escape
   useEffect(() => {
     if (!navOpen) return;
 
@@ -50,10 +54,11 @@ const Navbar = () => {
     };
 
     window.addEventListener("keydown", onKey);
+
     return () => window.removeEventListener("keydown", onKey);
   }, [navOpen]);
 
-  // logout dialog: Escape closes it, focus goes to Cancel, page scroll is locked
+  // Handle logout dialog keyboard and scroll behavior
   useEffect(() => {
     if (!confirmOpen) return;
 
@@ -63,6 +68,7 @@ const Navbar = () => {
 
     window.addEventListener("keydown", onKey);
     cancelRef.current?.focus();
+
     const prevOverflow = document.body.style.overflow;
     document.body.style.overflow = "hidden";
 
@@ -72,10 +78,12 @@ const Navbar = () => {
     };
   }, [confirmOpen]);
 
-  // success notification: hides itself after 3 seconds
+  // Hide success notification after 3 seconds
   useEffect(() => {
     if (!toast) return;
+
     const t = setTimeout(() => setToast(false), 3000);
+
     return () => clearTimeout(t);
   }, [toast]);
 
@@ -121,9 +129,16 @@ const Navbar = () => {
               </>
             )}
 
-            <a href="/#contact" className="nv-link nv-cta">
-              REQUEST A QUOTE
-            </a>
+            {/* Admin panel button: administrators only */}
+            {isAdmin && (
+              <Link to="/admin" className="nv-link nv-outline">
+                ADMIN PANEL
+              </Link>
+            )}
+
+            <Link to="/enquiry" className="nv-link nv-cta">
+              REQUEST A ENQUIRY
+            </Link>
           </div>
 
           {/* Mobile menu button */}
@@ -168,6 +183,17 @@ const Navbar = () => {
               </>
             )}
 
+            {/* Admin panel button on mobile */}
+            {isAdmin && (
+              <Link
+                to="/admin"
+                className="nv-m-link"
+                onClick={close}
+              >
+                ADMIN PANEL
+              </Link>
+            )}
+
             <a
               href="/#contact"
               className="nv-link nv-cta nv-m-cta"
@@ -179,11 +205,15 @@ const Navbar = () => {
         )}
       </header>
 
-      {/* Logout confirmation dialog (portal so it covers the whole page) */}
+      {/* Logout confirmation dialog */}
       {confirmOpen &&
         createPortal(
-          <div className="nv-overlay" onClick={() => setConfirmOpen(false)}>
+          <div
+            className="nv-overlay"
+            onClick={() => setConfirmOpen(false)}
+          >
             <style>{css}</style>
+
             <div
               className="nv-dialog"
               role="dialog"
@@ -197,6 +227,7 @@ const Navbar = () => {
               </div>
 
               <h2 id="nv-dialog-title">Log out?</h2>
+
               <p id="nv-dialog-desc">
                 Are you sure you want to log out of your ExportYard account?
               </p>
@@ -229,10 +260,13 @@ const Navbar = () => {
         createPortal(
           <div className="nv-toast" role="status" aria-live="polite">
             <style>{css}</style>
+
             <span className="nv-toast-icon">
               <Check size={16} />
             </span>
+
             <span>Logged out successfully</span>
+
             <button
               type="button"
               className="nv-toast-close"

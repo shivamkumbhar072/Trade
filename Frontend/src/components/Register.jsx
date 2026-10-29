@@ -1,55 +1,75 @@
+
 import { useRef, useState } from "react";
 import { useNavigate, Link } from "react-router-dom";
 import { Eye, EyeOff } from "lucide-react";
-import { registerUser } from "../services/api";
+import { registerUser, loginUser } from "../services/api";
 import { useAuth } from "../context/AuthContext.jsx";
 
 const EMAIL_RE = /^[^\s@]+@[^\s@]+\.[^\s@]{2,}$/;
 
-/* check the fields and return an object of messages (empty object = valid) */
 function validate(form) {
   const errors = {};
   const name = form.name.trim();
   const email = form.email.trim();
 
-  if (!name) errors.name = "Name is required.";
-  else if (name.length < 2) errors.name = "Name must be at least 2 characters.";
-  else if (name.length > 100) errors.name = "Name must be 100 characters or fewer.";
+  if (!name) {
+    errors.name = "Name is required.";
+  } else if (name.length < 2) {
+    errors.name = "Name must be at least 2 characters.";
+  } else if (name.length > 100) {
+    errors.name = "Name must be 100 characters or fewer.";
+  }
 
-  if (!email) errors.email = "Email is required.";
-  else if (!EMAIL_RE.test(email)) errors.email = "Enter a valid email address.";
+  if (!email) {
+    errors.email = "Email is required.";
+  } else if (!EMAIL_RE.test(email)) {
+    errors.email = "Enter a valid email address.";
+  }
 
-  if (!form.password) errors.password = "Password is required.";
-  else if (form.password.length < 8) errors.password = "Password must be at least 8 characters.";
-  else if (form.password.length > 72) errors.password = "Password must be 72 characters or fewer.";
+  if (!form.password) {
+    errors.password = "Password is required.";
+  } else if (form.password.length < 8) {
+    errors.password = "Password must be at least 8 characters.";
+  } else if (form.password.length > 72) {
+    errors.password = "Password must be 72 characters or fewer.";
+  }
 
   return errors;
 }
 
-/* turn any thrown error into a message that is safe to show */
 function getErrorMessage(error) {
-  const status = error?.status || error?.response?.status;
-  const serverMessage = error?.response?.data?.message;
-  const text = String(error?.message || "");
-
   if (
-    (typeof navigator !== "undefined" && !navigator.onLine) ||
-    /failed to fetch|network ?error|load failed/i.test(text)
+    typeof navigator !== "undefined" &&
+    !navigator.onLine
   ) {
-    return "Can't reach the server. Check your internet connection and try again.";
+    return "No internet connection. Please try again.";
   }
-  if (status === 409) return serverMessage || text || "An account with this email already exists.";
-  if (status >= 500) return "Something went wrong on our side. Please try again in a moment.";
-  if (status === 429) return "Too many attempts. Please wait a minute and try again.";
 
-  return serverMessage || text || "Registration failed. Please try again.";
+  if (/failed to fetch|network ?error|load failed/i.test(error.message || "")) {
+    return "Can't reach the server. Check your API URL and connection.";
+  }
+
+  if (error.status === 409) {
+    return error.message || "This email is already registered.";
+  }
+
+  if (error.status >= 500) {
+    return "Something went wrong on the server. Please try again.";
+  }
+
+  return error.message || "Registration failed. Please try again.";
 }
 
-function Register() {
+export default function Register() {
   const navigate = useNavigate();
-  const { isLoggedIn } = useAuth();
+  const { isLoggedIn, login } = useAuth();
 
-  const [form, setForm] = useState({ name: "", email: "", password: "" });
+  const [form, setForm] = useState({
+    name: "",
+    email: "",
+    password: "",
+  });
+
   const [errors, setErrors] = useState({});
   const [message, setMessage] = useState("");
   const [loading, setLoading] = useState(false);
@@ -63,43 +83,77 @@ function Register() {
 
   function handleChange(event) {
     const { name, value } = event.target;
-    setForm((f) => ({ ...f, [name]: value }));
 
-    // clear the message for the field being edited, and any server error
-    if (errors[name]) setErrors((e) => ({ ...e, [name]: "" }));
+    setForm((previous) => ({
+      ...previous,
+      [name]: value,
+    }));
+
+    if (errors[name]) {
+      setErrors((previous) => ({
+        ...previous,
+        [name]: "",
+      }));
+    }
+
     if (message) setMessage("");
   }
 
   async function handleSubmit(event) {
     event.preventDefault();
+
     if (loading) return;
 
     setMessage("");
 
-    // 1. validate before calling the server
-    const found = validate(form);
-    setErrors(found);
+    const foundErrors = validate(form);
+    setErrors(foundErrors);
 
-    const firstBad = ["name", "email", "password"].find((key) => found[key]);
-    if (firstBad) {
-      refs[firstBad].current?.focus();
+    const firstInvalid = ["name", "email", "password"].find(
+      (key) => foundErrors[key]
+    );
+
+    if (firstInvalid) {
+      refs[firstInvalid].current?.focus();
       return;
     }
 
-    // 2. call the server
     setLoading(true);
 
+    const credentials = {
+      name: form.name.trim(),
+      email: form.email.trim().toLowerCase(),
+      password: form.password,
+    };
+
     try {
-      await registerUser({
-        name: form.name.trim(),
-        email: form.email.trim().toLowerCase(),
-        password: form.password,
+      // 1. Create the account.
+      await registerUser(credentials);
+
+      // 2. Log in using the same email and password.
+      const result = await loginUser({
+        email: credentials.email,
+        password: credentials.password,
       });
 
-      setForm({ name: "", email: "", password: "" });
+      // 3. Ensure the backend returned authentication details.
+      if (!result.token || !result.user) {
+        throw new Error(
+          "Account created, but automatic login failed. Please log in manually."
+        );
+      }
 
-      // Registration creates the account; login separately to start a session.
-      navigate("/login", { replace: true });
+      // 4. Save the session and update the Navbar immediately.
+      login(result.token, result.user);
+
+      // 5. Clear the form and go to the homepage.
+      setForm({
+        name: "",
+        email: "",
+        password: "",
+      });
+
+      navigate("/", { replace: true });
     } catch (error) {
       setMessage(getErrorMessage(error));
     } finally {
@@ -109,12 +163,22 @@ function Register() {
 
   if (isLoggedIn) {
     return (
-      <main className="lg-page">
-        <style>{css}</style>
-        <div className="lg-card">
-          <h1 className="lg-title">You're already logged in</h1>
-          <p className="lg-sub">Head back to the homepage to continue.</p>
-          <Link to="/" className="lg-btn lg-btn-link">
+      <main className="ey-register-page">
+        <style>{registerCss}</style>
+
+        <div className="ey-register-card">
+          <h1 className="ey-register-title">
+            You're already logged in
+          </h1>
+
+          <p className="ey-register-subtitle">
+            Head back to the homepage to continue.
+          </p>
+
+          <Link
+            to="/"
+            className="ey-register-button ey-register-link-button"
+          >
             Go to homepage
           </Link>
         </div>
@@ -123,17 +187,30 @@ function Register() {
   }
 
   return (
-    <main className="lg-page">
-      <style>{css}</style>
+    <main className="ey-register-page">
+      <style>{registerCss}</style>
 
-      <div className="lg-card">
-        <h1 className="lg-title">Create your account</h1>
-        <p className="lg-sub">Sign up to request quotes and track your orders.</p>
+      <div className="ey-register-card">
+        <p className="ey-register-eyebrow">
+          WELCOME TO EXPORTYARD
+        </p>
 
-        {/* noValidate: we show our own messages instead of the browser's popups */}
-        <form onSubmit={handleSubmit} className="lg-form" noValidate>
-          <div className={`lg-field${errors.name ? " has-error" : ""}`}>
+        <h1 className="ey-register-title">
+          Create your account
+        </h1>
+
+        <p className="ey-register-subtitle">
+          Sign up to request quotes and track your orders.
+        </p>
+
+        <form
+          onSubmit={handleSubmit}
+          className="ey-register-form"
+          noValidate
+        >
+          <div className={`ey-register-field ${errors.name ? "has-error" : ""}`}>
             <label htmlFor="register-name">Name</label>
+
             <input
               ref={refs.name}
               id="register-name"
@@ -145,17 +222,19 @@ function Register() {
               maxLength={100}
               autoComplete="name"
               aria-invalid={!!errors.name}
-              aria-describedby={errors.name ? "register-name-error" : undefined}
+              required
             />
+
             {errors.name && (
-              <span id="register-name-error" className="lg-hint" role="alert">
+              <span className="ey-register-hint" role="alert">
                 {errors.name}
               </span>
             )}
           </div>
 
-          <div className={`lg-field${errors.email ? " has-error" : ""}`}>
+          <div className={`ey-register-field ${errors.email ? "has-error" : ""}`}>
             <label htmlFor="register-email">Email</label>
+
             <input
               ref={refs.email}
               id="register-email"
@@ -166,18 +245,20 @@ function Register() {
               onChange={handleChange}
               autoComplete="email"
               aria-invalid={!!errors.email}
-              aria-describedby={errors.email ? "register-email-error" : undefined}
+              required
             />
+
             {errors.email && (
-              <span id="register-email-error" className="lg-hint" role="alert">
+              <span className="ey-register-hint" role="alert">
                 {errors.email}
               </span>
             )}
           </div>
 
-          <div className={`lg-field${errors.password ? " has-error" : ""}`}>
+          <div className={`ey-register-field ${errors.password ? "has-error" : ""}`}>
             <label htmlFor="register-password">Password</label>
-            <div className="lg-pass">
+
+            <div className="ey-register-password">
               <input
                 ref={refs.password}
                 id="register-password"
@@ -189,68 +270,67 @@ function Register() {
                 maxLength={72}
                 autoComplete="new-password"
                 aria-invalid={!!errors.password}
-                aria-describedby={
-                  errors.password ? "register-password-error" : "register-password-help"
-                }
+                required
               />
+
               <button
                 type="button"
-                className="lg-eye"
-                onClick={() => setShowPassword((s) => !s)}
+                className="ey-register-eye"
+                onClick={() => setShowPassword((value) => !value)}
                 aria-label={showPassword ? "Hide password" : "Show password"}
               >
                 {showPassword ? <EyeOff size={18} /> : <Eye size={18} />}
               </button>
             </div>
+
             {errors.password ? (
-              <span id="register-password-error" className="lg-hint" role="alert">
+              <span className="ey-register-hint" role="alert">
                 {errors.password}
               </span>
             ) : (
-              <span id="register-password-help" className="lg-help">
+              <span className="ey-register-help">
                 Use 8 to 72 characters.
               </span>
             )}
           </div>
 
           {message && (
-            <div className="lg-error" role="alert">
+            <div className="ey-register-error" role="alert">
               {message}
             </div>
           )}
 
-          <button type="submit" className="lg-btn" disabled={loading}>
-            {loading ? "Registering..." : "Register"}
+          <button
+            type="submit"
+            className="ey-register-button"
+            disabled={loading}
+          >
+            {loading ? "Creating account..." : "Create account"}
           </button>
         </form>
 
-        <p className="lg-foot">
-          Already have an account? <Link to="/login">Login</Link>
+        <p className="ey-register-footer">
+          Already have an account? <Link to="/login">Log in</Link>
         </p>
       </div>
     </main>
   );
 }
 
-const css = `
-@import url('https://fonts.googleapis.com/css2?family=Bricolage+Grotesque:opsz,wght@12..96,400..800&display=swap');
-
-.lg-page {
-  min-height: 100vh;
-  min-height: 100svh;
+const registerCss = `
+.ey-register-page {
+  min-height: 65vh;
   display: grid;
   place-items: center;
-  /* top padding clears the fixed navbar */
   padding: 6rem 1.25rem 3rem;
   box-sizing: border-box;
   color: #fff;
-  font-family: 'Bricolage Grotesque', system-ui, sans-serif;
+  font-family: system-ui, sans-serif;
   background:
     radial-gradient(ellipse 70% 40% at 50% 100%, rgba(255,197,143,.2), transparent 70%),
     linear-gradient(#0a1628 0%, #0f2a4a 55%, #0e4a64 100%);
 }
-
-.lg-card {
+.ey-register-card {
   width: 100%;
   max-width: 26rem;
   box-sizing: border-box;
@@ -260,42 +340,39 @@ const css = `
   border: 1px solid rgba(56,189,208,.22);
   box-shadow: 0 30px 60px -24px rgba(0,0,0,.7);
 }
-
-.lg-title {
+.ey-register-eyebrow {
+  color: #ffc58f;
+  font-size: .7rem;
+  font-weight: 800;
+  letter-spacing: 1.5px;
+}
+.ey-register-title {
   margin: 0;
   font-size: clamp(1.7rem, 5vw, 2.1rem);
-  font-weight: 700;
   letter-spacing: -.03em;
-  line-height: 1.1;
 }
-
-.lg-sub {
-  margin: .6rem 0 0;
+.ey-register-subtitle {
   color: rgba(255,255,255,.7);
+  font-size: .9rem;
   line-height: 1.5;
 }
-
-.lg-form {
+.ey-register-form {
   display: flex;
   flex-direction: column;
   gap: 1.1rem;
   margin-top: 1.6rem;
 }
-
-.lg-field {
+.ey-register-field {
   display: flex;
   flex-direction: column;
   gap: .4rem;
 }
-
-.lg-field label {
+.ey-register-field label {
   font-size: .8rem;
   font-weight: 600;
-  letter-spacing: .04em;
   color: rgba(255,255,255,.8);
 }
-
-.lg-field input {
+.ey-register-field input {
   width: 100%;
   box-sizing: border-box;
   padding: .85rem 1rem;
@@ -304,60 +381,40 @@ const css = `
   background: rgba(255,255,255,.07);
   color: #fff;
   font: inherit;
-  font-size: 1rem; /* 16px stops iOS zooming on focus */
-  transition: border-color .2s, background .2s, box-shadow .2s;
+  font-size: 16px;
 }
-
-.lg-field input::placeholder {
+.ey-register-field input::placeholder {
   color: rgba(255,255,255,.4);
 }
-
-.lg-field input:focus {
+.ey-register-field input:focus {
   outline: none;
   border-color: #38bdd0;
-  background: rgba(255,255,255,.1);
   box-shadow: 0 0 0 3px rgba(56,189,208,.25);
 }
-
-/* empty / invalid field */
-.lg-field.has-error input {
+.ey-register-field.has-error input {
   border-color: #ff7a66;
-  background: rgba(200,65,47,.12);
 }
-
-.lg-field.has-error input:focus {
-  border-color: #ff7a66;
-  box-shadow: 0 0 0 3px rgba(255,122,102,.25);
-}
-
-.lg-hint {
-  font-size: .82rem;
-  line-height: 1.35;
+.ey-register-hint {
   color: #ffb4a6;
+  font-size: .82rem;
 }
-
-.lg-help {
-  font-size: .8rem;
-  line-height: 1.35;
+.ey-register-help {
   color: rgba(255,255,255,.5);
+  font-size: .8rem;
 }
-
-.lg-pass {
+.ey-register-password {
   position: relative;
 }
-
-.lg-pass input {
+.ey-register-password input {
   padding-right: 3rem;
 }
-
-.lg-eye {
+.ey-register-eye {
   position: absolute;
   top: 50%;
   right: .35rem;
   transform: translateY(-50%);
-  display: inline-flex;
-  align-items: center;
-  justify-content: center;
+  display: grid;
+  place-items: center;
   width: 2.5rem;
   height: 2.5rem;
   border: 0;
@@ -366,12 +423,10 @@ const css = `
   color: rgba(255,255,255,.65);
   cursor: pointer;
 }
-
-.lg-eye:hover {
+.ey-register-eye:hover {
   color: #fff;
 }
-
-.lg-error {
+.ey-register-error {
   padding: .75rem 1rem;
   border-radius: 10px;
   border: 1px solid rgba(255,120,100,.45);
@@ -380,8 +435,7 @@ const css = `
   font-size: .9rem;
   line-height: 1.4;
 }
-
-.lg-btn {
+.ey-register-button {
   display: inline-block;
   width: 100%;
   box-sizing: border-box;
@@ -391,59 +445,37 @@ const css = `
   background: #ffc58f;
   color: #10222e;
   font: inherit;
-  font-weight: 600;
+  font-weight: 700;
   text-align: center;
   text-decoration: none;
   cursor: pointer;
-  transition: background .2s, transform .2s, opacity .2s;
 }
-
-.lg-btn:hover:not(:disabled) {
+.ey-register-button:hover:not(:disabled) {
   background: #ffd7b0;
-  transform: translateY(-1px);
 }
-
-.lg-btn:disabled {
+.ey-register-button:disabled {
   opacity: .65;
   cursor: not-allowed;
 }
-
-.lg-btn-link {
+.ey-register-link-button {
   margin-top: 1.4rem;
 }
-
-.lg-foot {
+.ey-register-footer {
   margin: 1.4rem 0 0;
   text-align: center;
-  font-size: .92rem;
+  font-size: .9rem;
   color: rgba(255,255,255,.65);
 }
-
-.lg-foot a {
+.ey-register-footer a {
   color: #38bdd0;
   font-weight: 600;
   text-decoration: none;
 }
-
-.lg-foot a:hover {
+.ey-register-footer a:hover {
   text-decoration: underline;
 }
-
-.lg-btn:focus-visible,
-.lg-eye:focus-visible,
-.lg-foot a:focus-visible {
-  outline: 2px solid #ffd9a0;
-  outline-offset: 3px;
-}
-
 @media (max-width: 480px) {
-  .lg-page { padding: 5.5rem 1rem 2rem; }
-  .lg-card { padding: 1.6rem 1.25rem; border-radius: 16px; }
-}
-
-@media (prefers-reduced-motion: reduce) {
-  .lg-btn, .lg-field input { transition: none; }
+  .ey-register-page { padding: 5.5rem 1rem 2rem; }
+  .ey-register-card { padding: 1.6rem 1.25rem; }
 }
 `;
-
-export default Register;
