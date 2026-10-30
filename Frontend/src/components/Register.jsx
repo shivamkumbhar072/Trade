@@ -1,7 +1,14 @@
 
 import { useRef, useState } from "react";
-import { useNavigate, Link } from "react-router-dom";
+
+import {
+  useNavigate,
+  useLocation,
+  Link,
+} from "react-router-dom";
+
 import { Eye, EyeOff } from "lucide-react";
+
 import { registerUser, loginUser } from "../services/api";
 import { useAuth } from "../context/AuthContext.jsx";
 
@@ -9,6 +16,7 @@ const EMAIL_RE = /^[^\s@]+@[^\s@]+\.[^\s@]{2,}$/;
 
 function validate(form) {
   const errors = {};
+
   const name = form.name.trim();
   const email = form.email.trim();
 
@@ -62,7 +70,12 @@ function getErrorMessage(error) {
 
 export default function Register() {
   const navigate = useNavigate();
+  const location = useLocation();
+
   const { isLoggedIn, login } = useAuth();
+
+  // Get originally requested page
+  const redirectTo = location.state?.from?.pathname || "/";
 
   const [form, setForm] = useState({
     name: "",
@@ -127,33 +140,35 @@ export default function Register() {
     };
 
     try {
-      // 1. Create the account.
+      // 1. Create account
       await registerUser(credentials);
 
-      // 2. Log in using the same email and password.
+      // 2. Automatically log in
       const result = await loginUser({
         email: credentials.email,
         password: credentials.password,
       });
 
-      // 3. Ensure the backend returned authentication details.
-      if (!result.token || !result.user) {
+      // 3. Validate response
+      if (!result?.token || !result?.user) {
         throw new Error(
           "Account created, but automatic login failed. Please log in manually."
         );
       }
 
-      // 4. Save the session and update the Navbar immediately.
+      // 4. Update authentication context
       login(result.token, result.user);
 
-      // 5. Clear the form and go to the homepage.
+      // 5. Clear form
       setForm({
         name: "",
         email: "",
         password: "",
       });
 
-      navigate("/", { replace: true });
+      // 6. Redirect to originally requested page
+      navigate(redirectTo, { replace: true });
+
     } catch (error) {
       setMessage(getErrorMessage(error));
     } finally {
@@ -172,15 +187,17 @@ export default function Register() {
           </h1>
 
           <p className="ey-register-subtitle">
-            Head back to the homepage to continue.
+            Continue to your requested page.
           </p>
 
-          <Link
-            to="/"
-            className="ey-register-button ey-register-link-button"
+          <button
+            onClick={() =>
+              navigate(redirectTo, { replace: true })
+            }
+            className="ey-register-button"
           >
-            Go to homepage
-          </Link>
+            Continue
+          </button>
         </div>
       </main>
     );
@@ -208,6 +225,7 @@ export default function Register() {
           className="ey-register-form"
           noValidate
         >
+          {/* Name */}
           <div className={`ey-register-field ${errors.name ? "has-error" : ""}`}>
             <label htmlFor="register-name">Name</label>
 
@@ -232,6 +250,7 @@ export default function Register() {
             )}
           </div>
 
+          {/* Email */}
           <div className={`ey-register-field ${errors.email ? "has-error" : ""}`}>
             <label htmlFor="register-email">Email</label>
 
@@ -255,6 +274,7 @@ export default function Register() {
             )}
           </div>
 
+          {/* Password */}
           <div className={`ey-register-field ${errors.password ? "has-error" : ""}`}>
             <label htmlFor="register-password">Password</label>
 
@@ -279,7 +299,11 @@ export default function Register() {
                 onClick={() => setShowPassword((value) => !value)}
                 aria-label={showPassword ? "Hide password" : "Show password"}
               >
-                {showPassword ? <EyeOff size={18} /> : <Eye size={18} />}
+                {showPassword ? (
+                  <EyeOff size={18} />
+                ) : (
+                  <Eye size={18} />
+                )}
               </button>
             </div>
 
@@ -294,12 +318,14 @@ export default function Register() {
             )}
           </div>
 
+          {/* Error */}
           {message && (
             <div className="ey-register-error" role="alert">
               {message}
             </div>
           )}
 
+          {/* Submit */}
           <button
             type="submit"
             className="ey-register-button"
@@ -310,7 +336,13 @@ export default function Register() {
         </form>
 
         <p className="ey-register-footer">
-          Already have an account? <Link to="/login">Log in</Link>
+          Already have an account?{" "}
+          <Link
+            to="/login"
+            state={location.state}
+          >
+            Log in
+          </Link>
         </p>
       </div>
     </main>
@@ -330,6 +362,7 @@ const registerCss = `
     radial-gradient(ellipse 70% 40% at 50% 100%, rgba(255,197,143,.2), transparent 70%),
     linear-gradient(#0a1628 0%, #0f2a4a 55%, #0e4a64 100%);
 }
+
 .ey-register-card {
   width: 100%;
   max-width: 26rem;
@@ -340,38 +373,45 @@ const registerCss = `
   border: 1px solid rgba(56,189,208,.22);
   box-shadow: 0 30px 60px -24px rgba(0,0,0,.7);
 }
+
 .ey-register-eyebrow {
   color: #ffc58f;
   font-size: .7rem;
   font-weight: 800;
   letter-spacing: 1.5px;
 }
+
 .ey-register-title {
   margin: 0;
   font-size: clamp(1.7rem, 5vw, 2.1rem);
   letter-spacing: -.03em;
 }
+
 .ey-register-subtitle {
   color: rgba(255,255,255,.7);
   font-size: .9rem;
   line-height: 1.5;
 }
+
 .ey-register-form {
   display: flex;
   flex-direction: column;
   gap: 1.1rem;
   margin-top: 1.6rem;
 }
+
 .ey-register-field {
   display: flex;
   flex-direction: column;
   gap: .4rem;
 }
+
 .ey-register-field label {
   font-size: .8rem;
   font-weight: 600;
   color: rgba(255,255,255,.8);
 }
+
 .ey-register-field input {
   width: 100%;
   box-sizing: border-box;
@@ -383,31 +423,39 @@ const registerCss = `
   font: inherit;
   font-size: 16px;
 }
+
 .ey-register-field input::placeholder {
   color: rgba(255,255,255,.4);
 }
+
 .ey-register-field input:focus {
   outline: none;
   border-color: #38bdd0;
   box-shadow: 0 0 0 3px rgba(56,189,208,.25);
 }
+
 .ey-register-field.has-error input {
   border-color: #ff7a66;
 }
+
 .ey-register-hint {
   color: #ffb4a6;
   font-size: .82rem;
 }
+
 .ey-register-help {
   color: rgba(255,255,255,.5);
   font-size: .8rem;
 }
+
 .ey-register-password {
   position: relative;
 }
+
 .ey-register-password input {
   padding-right: 3rem;
 }
+
 .ey-register-eye {
   position: absolute;
   top: 50%;
@@ -423,9 +471,11 @@ const registerCss = `
   color: rgba(255,255,255,.65);
   cursor: pointer;
 }
+
 .ey-register-eye:hover {
   color: #fff;
 }
+
 .ey-register-error {
   padding: .75rem 1rem;
   border-radius: 10px;
@@ -435,6 +485,7 @@ const registerCss = `
   font-size: .9rem;
   line-height: 1.4;
 }
+
 .ey-register-button {
   display: inline-block;
   width: 100%;
@@ -450,32 +501,36 @@ const registerCss = `
   text-decoration: none;
   cursor: pointer;
 }
+
 .ey-register-button:hover:not(:disabled) {
   background: #ffd7b0;
 }
+
 .ey-register-button:disabled {
   opacity: .65;
   cursor: not-allowed;
 }
-.ey-register-link-button {
-  margin-top: 1.4rem;
-}
+
 .ey-register-footer {
   margin: 1.4rem 0 0;
   text-align: center;
   font-size: .9rem;
   color: rgba(255,255,255,.65);
 }
+
 .ey-register-footer a {
   color: #38bdd0;
   font-weight: 600;
   text-decoration: none;
 }
+
 .ey-register-footer a:hover {
   text-decoration: underline;
 }
+
 @media (max-width: 480px) {
   .ey-register-page { padding: 5.5rem 1rem 2rem; }
   .ey-register-card { padding: 1.6rem 1.25rem; }
 }
 `;
+

@@ -1,5 +1,11 @@
 
-import { Routes, Route, Navigate, Outlet } from "react-router-dom";
+import {
+  Routes,
+  Route,
+  Navigate,
+  Outlet,
+  useLocation,
+} from "react-router-dom";
 
 import HomepageLayout from "./Homepage/HomepageLayout.jsx";
 import Navbar from "./Homepage/Navbar.jsx";
@@ -16,7 +22,7 @@ import AdminEnquiries from "./admin/AdminEnquiries.jsx";
 
 import Enquiry from "./pages/Enquiry.jsx";
 
-// Shared layout for all pages
+// Shared layout
 function MainLayout() {
   return (
     <div className="app-layout">
@@ -31,40 +37,75 @@ function MainLayout() {
   );
 }
 
+// Protected route
+function ProtectedRoute() {
+  const { isLoggedIn } = useAuth();
+  const location = useLocation();
+
+  return isLoggedIn ? (
+    <Outlet />
+  ) : (
+    <Navigate
+      to="/login"
+      state={{ from: location }}
+      replace
+    />
+  );
+}
+
 export default function App() {
   const { isLoggedIn } = useAuth();
+  const location = useLocation();
+
+  // Get originally requested page
+  const redirectTo = location.state?.from?.pathname || "/";
 
   return (
     <Routes>
-      {/* All pages share the same Navbar and Footer */}
       <Route element={<MainLayout />}>
-        {/* Public pages */}
-        <Route path="/" element={<HomepageLayout />} />
-        <Route path="/enquiry" element={<Enquiry />} />
 
+        {/* Public Pages */}
+        <Route path="/" element={<HomepageLayout />} />
+
+        {/* Protected Pages */}
+        <Route element={<ProtectedRoute />}>
+          <Route path="/enquiry" element={<Enquiry />} />
+        </Route>
+
+        {/* Login */}
         <Route
           path="/login"
           element={
-            isLoggedIn ? <Navigate to="/" replace /> : <Login />
+            isLoggedIn ? (
+              <Navigate to={redirectTo} replace />
+            ) : (
+              <Login />
+            )
           }
         />
 
+        {/* Register */}
         <Route
           path="/register"
           element={
-            isLoggedIn ? <Navigate to="/" replace /> : <Register />
+            isLoggedIn ? (
+              <Navigate to="/" replace />
+            ) : (
+              <Register />
+            )
           }
         />
 
-        {/* Admin pages also share the same Navbar and Footer */}
+        {/* Admin Pages */}
         <Route path="/admin" element={<AdminLayout />}>
           <Route index element={<AdminDashboard />} />
           <Route path="users" element={<Users />} />
           <Route path="enquiries" element={<AdminEnquiries />} />
         </Route>
+
       </Route>
 
-      {/* Redirect unknown routes to homepage */}
+      {/* Unknown Routes */}
       <Route path="*" element={<Navigate to="/" replace />} />
     </Routes>
   );

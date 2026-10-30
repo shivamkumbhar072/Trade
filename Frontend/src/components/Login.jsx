@@ -1,25 +1,38 @@
+
 import { useRef, useState } from "react";
-import { useNavigate, Link } from "react-router-dom";
+
+import {
+  useNavigate,
+  useLocation,
+  Link,
+} from "react-router-dom";
+
 import { Eye, EyeOff } from "lucide-react";
+
 import { loginUser } from "../services/api";
 import { useAuth } from "../context/AuthContext.jsx";
 
 const EMAIL_RE = /^[^\s@]+@[^\s@]+\.[^\s@]{2,}$/;
 
-/* check the fields and return an object of messages (empty object = valid) */
+/* Validate form fields */
 function validate(form) {
   const errors = {};
   const email = form.email.trim();
 
-  if (!email) errors.email = "Email is required.";
-  else if (!EMAIL_RE.test(email)) errors.email = "Enter a valid email address.";
+  if (!email) {
+    errors.email = "Email is required.";
+  } else if (!EMAIL_RE.test(email)) {
+    errors.email = "Enter a valid email address.";
+  }
 
-  if (!form.password) errors.password = "Password is required.";
+  if (!form.password) {
+    errors.password = "Password is required.";
+  }
 
   return errors;
 }
 
-/* turn any thrown error into a message that is safe to show */
+/* Handle errors */
 function getErrorMessage(error) {
   const status = error?.status || error?.response?.status;
   const serverMessage = error?.response?.data?.message;
@@ -31,17 +44,32 @@ function getErrorMessage(error) {
   ) {
     return "Can't reach the server. Check your internet connection and try again.";
   }
-  if (status >= 500) return "Something went wrong on our side. Please try again in a moment.";
-  if (status === 429) return "Too many attempts. Please wait a minute and try again.";
+
+  if (status >= 500) {
+    return "Something went wrong on our side. Please try again in a moment.";
+  }
+
+  if (status === 429) {
+    return "Too many attempts. Please wait a minute and try again.";
+  }
 
   return serverMessage || text || "Login failed. Please try again.";
 }
 
 function Login() {
   const navigate = useNavigate();
+  const location = useLocation();
+
   const { login, isLoggedIn } = useAuth();
 
-  const [form, setForm] = useState({ email: "", password: "" });
+  // Get the originally requested page
+  const redirectTo = location.state?.from?.pathname || "/";
+
+  const [form, setForm] = useState({
+    email: "",
+    password: "",
+  });
+
   const [errors, setErrors] = useState({});
   const [message, setMessage] = useState("");
   const [loading, setLoading] = useState(false);
@@ -52,20 +80,26 @@ function Login() {
 
   function handleChange(event) {
     const { name, value } = event.target;
+
     setForm((f) => ({ ...f, [name]: value }));
 
-    // clear the message for the field being edited, and the server error
-    if (errors[name]) setErrors((e) => ({ ...e, [name]: "" }));
-    if (message) setMessage("");
+    if (errors[name]) {
+      setErrors((e) => ({ ...e, [name]: "" }));
+    }
+
+    if (message) {
+      setMessage("");
+    }
   }
 
   async function handleSubmit(event) {
     event.preventDefault();
+
     if (loading) return;
 
     setMessage("");
 
-    // 1. validate before calling the server
+    // 1. Validate fields
     const found = validate(form);
     setErrors(found);
 
@@ -73,12 +107,13 @@ function Login() {
       emailRef.current?.focus();
       return;
     }
+
     if (found.password) {
       passwordRef.current?.focus();
       return;
     }
 
-    // 2. call the server
+    // 2. Login request
     setLoading(true);
 
     try {
@@ -91,8 +126,12 @@ function Login() {
         throw new Error("Invalid login response from server.");
       }
 
+      // 3. Update authentication context
       login(result.token, result.user);
-      navigate("/", { replace: true });
+
+      // 4. Redirect to originally requested page
+      navigate(redirectTo, { replace: true });
+
     } catch (error) {
       setMessage(getErrorMessage(error));
     } finally {
@@ -104,12 +143,22 @@ function Login() {
     return (
       <main className="lg-page">
         <style>{css}</style>
+
         <div className="lg-card">
-          <h1 className="lg-title">You're already logged in</h1>
-          <p className="lg-sub">Head back to the homepage to continue.</p>
-          <Link to="/" className="lg-btn lg-btn-link">
-            Go to homepage
-          </Link>
+          <h1 className="lg-title">
+            You're already logged in
+          </h1>
+
+          <p className="lg-sub">
+            Continue to your requested page.
+          </p>
+
+          <button
+            onClick={() => navigate(redirectTo, { replace: true })}
+            className="lg-btn"
+          >
+            Continue
+          </button>
         </div>
       </main>
     );
@@ -120,13 +169,24 @@ function Login() {
       <style>{css}</style>
 
       <div className="lg-card">
-        <h1 className="lg-title">Welcome back</h1>
-        <p className="lg-sub">Log in to your ExportYard account.</p>
+        <h1 className="lg-title">
+          Welcome back
+        </h1>
 
-        {/* noValidate: we show our own messages instead of the browser's popups */}
-        <form onSubmit={handleSubmit} className="lg-form" noValidate>
+        <p className="lg-sub">
+          Log in to your ExportYard account.
+        </p>
+
+        <form
+          onSubmit={handleSubmit}
+          className="lg-form"
+          noValidate
+        >
           <div className={`lg-field${errors.email ? " has-error" : ""}`}>
-            <label htmlFor="login-email">Email</label>
+            <label htmlFor="login-email">
+              Email
+            </label>
+
             <input
               ref={emailRef}
               id="login-email"
@@ -137,17 +197,27 @@ function Login() {
               onChange={handleChange}
               autoComplete="email"
               aria-invalid={!!errors.email}
-              aria-describedby={errors.email ? "login-email-error" : undefined}
+              aria-describedby={
+                errors.email ? "login-email-error" : undefined
+              }
             />
+
             {errors.email && (
-              <span id="login-email-error" className="lg-hint" role="alert">
+              <span
+                id="login-email-error"
+                className="lg-hint"
+                role="alert"
+              >
                 {errors.email}
               </span>
             )}
           </div>
 
           <div className={`lg-field${errors.password ? " has-error" : ""}`}>
-            <label htmlFor="login-password">Password</label>
+            <label htmlFor="login-password">
+              Password
+            </label>
+
             <div className="lg-pass">
               <input
                 ref={passwordRef}
@@ -159,19 +229,33 @@ function Login() {
                 onChange={handleChange}
                 autoComplete="current-password"
                 aria-invalid={!!errors.password}
-                aria-describedby={errors.password ? "login-password-error" : undefined}
+                aria-describedby={
+                  errors.password ? "login-password-error" : undefined
+                }
               />
+
               <button
                 type="button"
                 className="lg-eye"
                 onClick={() => setShowPassword((s) => !s)}
-                aria-label={showPassword ? "Hide password" : "Show password"}
+                aria-label={
+                  showPassword ? "Hide password" : "Show password"
+                }
               >
-                {showPassword ? <EyeOff size={18} /> : <Eye size={18} />}
+                {showPassword ? (
+                  <EyeOff size={18} />
+                ) : (
+                  <Eye size={18} />
+                )}
               </button>
             </div>
+
             {errors.password && (
-              <span id="login-password-error" className="lg-hint" role="alert">
+              <span
+                id="login-password-error"
+                className="lg-hint"
+                role="alert"
+              >
                 {errors.password}
               </span>
             )}
@@ -183,13 +267,18 @@ function Login() {
             </div>
           )}
 
-          <button type="submit" className="lg-btn" disabled={loading}>
+          <button
+            type="submit"
+            className="lg-btn"
+            disabled={loading}
+          >
             {loading ? "Logging in..." : "Login"}
           </button>
         </form>
 
         <p className="lg-foot">
-          Don't have an account? <Link to="/register">Sign up</Link>
+          Don't have an account?{" "}
+          <Link to="/register">Sign up</Link>
         </p>
       </div>
     </main>
@@ -204,7 +293,6 @@ const css = `
   min-height: 100svh;
   display: grid;
   place-items: center;
-  /* top padding clears the fixed navbar */
   padding: 6rem 1.25rem 3rem;
   box-sizing: border-box;
   color: #fff;
@@ -268,7 +356,7 @@ const css = `
   background: rgba(255,255,255,.07);
   color: #fff;
   font: inherit;
-  font-size: 1rem; /* 16px stops iOS zooming on focus */
+  font-size: 1rem;
   transition: border-color .2s, background .2s, box-shadow .2s;
 }
 
@@ -283,7 +371,6 @@ const css = `
   box-shadow: 0 0 0 3px rgba(56,189,208,.25);
 }
 
-/* empty / invalid field */
 .lg-field.has-error input {
   border-color: #ff7a66;
   background: rgba(200,65,47,.12);
@@ -364,10 +451,6 @@ const css = `
 .lg-btn:disabled {
   opacity: .65;
   cursor: not-allowed;
-}
-
-.lg-btn-link {
-  margin-top: 1.4rem;
 }
 
 .lg-foot {

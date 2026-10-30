@@ -14,7 +14,7 @@ const adminAuth = require("../middleware/adminAuth");
 const router = express.Router();
 
 // Anyone can submit a product enquiry
-router.post("/", createEnquiry);
+router.post("/",authMiddleware, createEnquiry);
 
 // Admin-only routes
 router.get("/", authMiddleware, adminAuth, getEnquiries);
