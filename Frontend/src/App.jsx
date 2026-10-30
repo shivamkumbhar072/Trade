@@ -21,6 +21,8 @@ import Users from "./admin/Users.jsx";
 import AdminEnquiries from "./admin/AdminEnquiries.jsx";
 
 import Enquiry from "./pages/Enquiry.jsx";
+import Terms from "./components/Terms.jsx";
+import Privacy from "./components/Privacy.jsx";
 
 // Shared layout
 function MainLayout() {
@@ -66,6 +68,9 @@ export default function App() {
 
         {/* Public Pages */}
         <Route path="/" element={<HomepageLayout />} />
+         <Route path="/terms" element={<Terms />} />
+         <Route path="/privacy-policy" element={<Privacy />} />
+        
 
         {/* Protected Pages */}
         <Route element={<ProtectedRoute />}>
