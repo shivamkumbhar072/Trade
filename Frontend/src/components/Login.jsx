@@ -1,68 +1,19 @@
-
-import { useRef, useState } from "react";
-
-import {
-  useNavigate,
-  useLocation,
-  Link,
-} from "react-router-dom";
-
-import { Eye, EyeOff } from "lucide-react";
+import { useState } from "react";
+import { Link, useNavigate, useLocation } from "react-router-dom";
+import { GoogleLogin } from "@react-oauth/google";
 
 import { loginUser } from "../services/api";
 import { useAuth } from "../context/AuthContext.jsx";
+import AuthShell, { useFitWidth } from "../components/AuthShell.jsx";
 
-const EMAIL_RE = /^[^\s@]+@[^\s@]+\.[^\s@]{2,}$/;
+const API_URL = import.meta.env.VITE_API_URL || "http://localhost:5000";
 
-/* Validate form fields */
-function validate(form) {
-  const errors = {};
-  const email = form.email.trim();
-
-  if (!email) {
-    errors.email = "Email is required.";
-  } else if (!EMAIL_RE.test(email)) {
-    errors.email = "Enter a valid email address.";
-  }
-
-  if (!form.password) {
-    errors.password = "Password is required.";
-  }
-
-  return errors;
-}
-
-/* Handle errors */
-function getErrorMessage(error) {
-  const status = error?.status || error?.response?.status;
-  const serverMessage = error?.response?.data?.message;
-  const text = String(error?.message || "");
-
-  if (
-    (typeof navigator !== "undefined" && !navigator.onLine) ||
-    /failed to fetch|network ?error|load failed/i.test(text)
-  ) {
-    return "Can't reach the server. Check your internet connection and try again.";
-  }
-
-  if (status >= 500) {
-    return "Something went wrong on our side. Please try again in a moment.";
-  }
-
-  if (status === 429) {
-    return "Too many attempts. Please wait a minute and try again.";
-  }
-
-  return serverMessage || text || "Login failed. Please try again.";
-}
-
-function Login() {
+export default function Login() {
   const navigate = useNavigate();
   const location = useLocation();
 
   const { login, isLoggedIn } = useAuth();
 
-  // Get the originally requested page
   const redirectTo = location.state?.from?.pathname || "/";
 
   const [form, setForm] = useState({
@@ -70,28 +21,13 @@ function Login() {
     password: "",
   });
 
-  const [errors, setErrors] = useState({});
-  const [message, setMessage] = useState("");
   const [loading, setLoading] = useState(false);
+  const [message, setMessage] = useState("");
   const [showPassword, setShowPassword] = useState(false);
 
-  const emailRef = useRef(null);
-  const passwordRef = useRef(null);
+  const [googleRef, googleWidth] = useFitWidth(340);
 
-  function handleChange(event) {
-    const { name, value } = event.target;
-
-    setForm((f) => ({ ...f, [name]: value }));
-
-    if (errors[name]) {
-      setErrors((e) => ({ ...e, [name]: "" }));
-    }
-
-    if (message) {
-      setMessage("");
-    }
-  }
-
+  // Handle normal email/password login
   async function handleSubmit(event) {
     event.preventDefault();
 
@@ -99,21 +35,11 @@ function Login() {
 
     setMessage("");
 
-    // 1. Validate fields
-    const found = validate(form);
-    setErrors(found);
-
-    if (found.email) {
-      emailRef.current?.focus();
+    if (!form.email.trim() || !form.password) {
+      setMessage("Please enter your email and password.");
       return;
     }
 
-    if (found.password) {
-      passwordRef.current?.focus();
-      return;
-    }
-
-    // 2. Login request
     setLoading(true);
 
     try {
@@ -126,365 +52,157 @@ function Login() {
         throw new Error("Invalid login response from server.");
       }
 
-      // 3. Update authentication context
       login(result.token, result.user);
 
-      // 4. Redirect to originally requested page
       navigate(redirectTo, { replace: true });
-
     } catch (error) {
-      setMessage(getErrorMessage(error));
+      setMessage(
+        error?.response?.data?.message ||
+          error?.message ||
+          "Login failed. Please try again."
+      );
     } finally {
       setLoading(false);
     }
   }
 
+  // Handle Google login
+  async function handleGoogleSuccess(response) {
+    if (!response?.credential || loading) return;
+
+    setMessage("");
+    setLoading(true);
+
+    try {
+      const result = await fetch(`${API_URL}/api/users/google-auth`, {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+        },
+        body: JSON.stringify({
+          credential: response.credential,
+        }),
+      });
+
+      const data = await result.json();
+
+      if (!result.ok) {
+        throw new Error(data.message || "Google login failed.");
+      }
+
+      if (!data.token || !data.user) {
+        throw new Error("Invalid Google authentication response.");
+      }
+
+      login(data.token, data.user);
+
+      navigate(redirectTo, { replace: true });
+    } catch (error) {
+      setMessage(error.message || "Google login failed. Please try again.");
+    } finally {
+      setLoading(false);
+    }
+  }
+
+  function handleGoogleError() {
+    setMessage("Google sign-in failed. Please try again.");
+  }
+
+  // Already logged in
   if (isLoggedIn) {
     return (
-      <main className="lg-page">
-        <style>{css}</style>
-
-        <div className="lg-card">
-          <h1 className="lg-title">
-            You're already logged in
-          </h1>
-
-          <p className="lg-sub">
-            Continue to your requested page.
-          </p>
-
-          <button
-            onClick={() => navigate(redirectTo, { replace: true })}
-            className="lg-btn"
-          >
-            Continue
-          </button>
-        </div>
-      </main>
+      <AuthShell
+        title="You're already logged in"
+        subtitle="Pick up where you left off."
+        footer={<Link to="/">Back to home</Link>}
+      >
+        <button
+          type="button"
+          className="au-btn"
+          onClick={() => navigate(redirectTo, { replace: true })}
+        >
+          Continue
+        </button>
+      </AuthShell>
     );
   }
 
   return (
-    <main className="lg-page">
-      <style>{css}</style>
+    <AuthShell
+      title="Welcome back"
+      subtitle="Log in to your ExportYard account."
+      footer={
+        <>
+          Don't have an account? <Link to="/register">Sign up</Link>
+        </>
+      }
+    >
+      {/* Google Login */}
+      <div className="au-google" ref={googleRef}>
+        <GoogleLogin
+          onSuccess={handleGoogleSuccess}
+          onError={handleGoogleError}
+          text="continue_with"
+          shape="rectangular"
+          size="large"
+          width={googleWidth}
+        />
+      </div>
 
-      <div className="lg-card">
-        <h1 className="lg-title">
-          Welcome back
-        </h1>
+      <div className="au-or" role="separator">or</div>
 
-        <p className="lg-sub">
-          Log in to your ExportYard account.
-        </p>
-
-        <form
-          onSubmit={handleSubmit}
-          className="lg-form"
-          noValidate
-        >
-          <div className={`lg-field${errors.email ? " has-error" : ""}`}>
-            <label htmlFor="login-email">
-              Email
-            </label>
-
+      {/* Email Login */}
+      <form className="au-form" onSubmit={handleSubmit} noValidate>
+        <div className="au-field">
+          <label htmlFor="login-email">Email</label>
+          <div className="au-input">
             <input
-              ref={emailRef}
               id="login-email"
-              name="email"
               type="email"
+              name="email"
               placeholder="you@company.com"
               value={form.email}
-              onChange={handleChange}
+              onChange={(e) => setForm({ ...form, email: e.target.value })}
               autoComplete="email"
-              aria-invalid={!!errors.email}
-              aria-describedby={
-                errors.email ? "login-email-error" : undefined
-              }
+              required
             />
-
-            {errors.email && (
-              <span
-                id="login-email-error"
-                className="lg-hint"
-                role="alert"
-              >
-                {errors.email}
-              </span>
-            )}
           </div>
+        </div>
 
-          <div className={`lg-field${errors.password ? " has-error" : ""}`}>
-            <label htmlFor="login-password">
-              Password
-            </label>
-
-            <div className="lg-pass">
-              <input
-                ref={passwordRef}
-                id="login-password"
-                name="password"
-                type={showPassword ? "text" : "password"}
-                placeholder="Enter your password"
-                value={form.password}
-                onChange={handleChange}
-                autoComplete="current-password"
-                aria-invalid={!!errors.password}
-                aria-describedby={
-                  errors.password ? "login-password-error" : undefined
-                }
-              />
-
-              <button
-                type="button"
-                className="lg-eye"
-                onClick={() => setShowPassword((s) => !s)}
-                aria-label={
-                  showPassword ? "Hide password" : "Show password"
-                }
-              >
-                {showPassword ? (
-                  <EyeOff size={18} />
-                ) : (
-                  <Eye size={18} />
-                )}
-              </button>
-            </div>
-
-            {errors.password && (
-              <span
-                id="login-password-error"
-                className="lg-hint"
-                role="alert"
-              >
-                {errors.password}
-              </span>
-            )}
+        <div className="au-field">
+          <label htmlFor="login-password">Password</label>
+          <div className="au-input has-btn">
+            <input
+              id="login-password"
+              type={showPassword ? "text" : "password"}
+              name="password"
+              placeholder="Enter your password"
+              value={form.password}
+              onChange={(e) => setForm({ ...form, password: e.target.value })}
+              autoComplete="current-password"
+              required
+            />
+            <button
+              type="button"
+              className="au-toggle"
+              onClick={() => setShowPassword((s) => !s)}
+              aria-pressed={showPassword}
+            >
+              {showPassword ? "Hide" : "Show"}
+            </button>
           </div>
+        </div>
 
-          {message && (
-            <div className="lg-error" role="alert">
-              {message}
-            </div>
-          )}
+        {message && (
+          <p role="alert" className="au-error">
+            {message}
+          </p>
+        )}
 
-          <button
-            type="submit"
-            className="lg-btn"
-            disabled={loading}
-          >
-            {loading ? "Logging in..." : "Login"}
-          </button>
-        </form>
-
-        <p className="lg-foot">
-          Don't have an account?{" "}
-          <Link to="/register">Sign up</Link>
-        </p>
-      </div>
-    </main>
+        <button type="submit" className="au-btn" disabled={loading}>
+          {loading ? "Logging in..." : "Log in"}
+        </button>
+      </form>
+    </AuthShell>
   );
 }
-
-const css = `
-@import url('https://fonts.googleapis.com/css2?family=Bricolage+Grotesque:opsz,wght@12..96,400..800&display=swap');
-
-.lg-page {
-  min-height: 100vh;
-  min-height: 100svh;
-  display: grid;
-  place-items: center;
-  padding: 6rem 1.25rem 3rem;
-  box-sizing: border-box;
-  color: #fff;
-  font-family: 'Bricolage Grotesque', system-ui, sans-serif;
-  background:
-    radial-gradient(ellipse 70% 40% at 50% 100%, rgba(255,197,143,.2), transparent 70%),
-    linear-gradient(#0a1628 0%, #0f2a4a 55%, #0e4a64 100%);
-}
-
-.lg-card {
-  width: 100%;
-  max-width: 26rem;
-  box-sizing: border-box;
-  padding: 2rem 1.75rem;
-  border-radius: 18px;
-  background: rgba(10,22,40,.82);
-  border: 1px solid rgba(56,189,208,.22);
-  box-shadow: 0 30px 60px -24px rgba(0,0,0,.7);
-}
-
-.lg-title {
-  margin: 0;
-  font-size: clamp(1.7rem, 5vw, 2.1rem);
-  font-weight: 700;
-  letter-spacing: -.03em;
-  line-height: 1.1;
-}
-
-.lg-sub {
-  margin: .6rem 0 0;
-  color: rgba(255,255,255,.7);
-  line-height: 1.5;
-}
-
-.lg-form {
-  display: flex;
-  flex-direction: column;
-  gap: 1.1rem;
-  margin-top: 1.6rem;
-}
-
-.lg-field {
-  display: flex;
-  flex-direction: column;
-  gap: .4rem;
-}
-
-.lg-field label {
-  font-size: .8rem;
-  font-weight: 600;
-  letter-spacing: .04em;
-  color: rgba(255,255,255,.8);
-}
-
-.lg-field input {
-  width: 100%;
-  box-sizing: border-box;
-  padding: .85rem 1rem;
-  border-radius: 10px;
-  border: 1px solid rgba(255,255,255,.18);
-  background: rgba(255,255,255,.07);
-  color: #fff;
-  font: inherit;
-  font-size: 1rem;
-  transition: border-color .2s, background .2s, box-shadow .2s;
-}
-
-.lg-field input::placeholder {
-  color: rgba(255,255,255,.4);
-}
-
-.lg-field input:focus {
-  outline: none;
-  border-color: #38bdd0;
-  background: rgba(255,255,255,.1);
-  box-shadow: 0 0 0 3px rgba(56,189,208,.25);
-}
-
-.lg-field.has-error input {
-  border-color: #ff7a66;
-  background: rgba(200,65,47,.12);
-}
-
-.lg-field.has-error input:focus {
-  border-color: #ff7a66;
-  box-shadow: 0 0 0 3px rgba(255,122,102,.25);
-}
-
-.lg-hint {
-  font-size: .82rem;
-  line-height: 1.35;
-  color: #ffb4a6;
-}
-
-.lg-pass {
-  position: relative;
-}
-
-.lg-pass input {
-  padding-right: 3rem;
-}
-
-.lg-eye {
-  position: absolute;
-  top: 50%;
-  right: .35rem;
-  transform: translateY(-50%);
-  display: inline-flex;
-  align-items: center;
-  justify-content: center;
-  width: 2.5rem;
-  height: 2.5rem;
-  border: 0;
-  border-radius: 8px;
-  background: transparent;
-  color: rgba(255,255,255,.65);
-  cursor: pointer;
-}
-
-.lg-eye:hover {
-  color: #fff;
-}
-
-.lg-error {
-  padding: .75rem 1rem;
-  border-radius: 10px;
-  border: 1px solid rgba(255,120,100,.45);
-  background: rgba(200,65,47,.18);
-  color: #ffd2c9;
-  font-size: .9rem;
-  line-height: 1.4;
-}
-
-.lg-btn {
-  display: inline-block;
-  width: 100%;
-  box-sizing: border-box;
-  padding: .95rem 1.5rem;
-  border: 0;
-  border-radius: 10px;
-  background: #ffc58f;
-  color: #10222e;
-  font: inherit;
-  font-weight: 600;
-  text-align: center;
-  text-decoration: none;
-  cursor: pointer;
-  transition: background .2s, transform .2s, opacity .2s;
-}
-
-.lg-btn:hover:not(:disabled) {
-  background: #ffd7b0;
-  transform: translateY(-1px);
-}
-
-.lg-btn:disabled {
-  opacity: .65;
-  cursor: not-allowed;
-}
-
-.lg-foot {
-  margin: 1.4rem 0 0;
-  text-align: center;
-  font-size: .92rem;
-  color: rgba(255,255,255,.65);
-}
-
-.lg-foot a {
-  color: #38bdd0;
-  font-weight: 600;
-  text-decoration: none;
-}
-
-.lg-foot a:hover {
-  text-decoration: underline;
-}
-
-.lg-btn:focus-visible,
-.lg-eye:focus-visible,
-.lg-foot a:focus-visible {
-  outline: 2px solid #ffd9a0;
-  outline-offset: 3px;
-}
-
-@media (max-width: 480px) {
-  .lg-page { padding: 5.5rem 1rem 2rem; }
-  .lg-card { padding: 1.6rem 1.25rem; border-radius: 16px; }
-}
-
-@media (prefers-reduced-motion: reduce) {
-  .lg-btn, .lg-field input { transition: none; }
-}
-`;
-
-export default Login;

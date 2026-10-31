@@ -1,72 +1,12 @@
-
-import { useRef, useState } from "react";
-
-import {
-  useNavigate,
-  useLocation,
-  Link,
-} from "react-router-dom";
-
-import { Eye, EyeOff } from "lucide-react";
+import { useState } from "react";
+import { Link, useNavigate, useLocation } from "react-router-dom";
+import { GoogleLogin } from "@react-oauth/google";
 
 import { registerUser, loginUser } from "../services/api";
 import { useAuth } from "../context/AuthContext.jsx";
+import AuthShell, { useFitWidth } from "../components/AuthShell.jsx";
 
-const EMAIL_RE = /^[^\s@]+@[^\s@]+\.[^\s@]{2,}$/;
-
-function validate(form) {
-  const errors = {};
-
-  const name = form.name.trim();
-  const email = form.email.trim();
-
-  if (!name) {
-    errors.name = "Name is required.";
-  } else if (name.length < 2) {
-    errors.name = "Name must be at least 2 characters.";
-  } else if (name.length > 100) {
-    errors.name = "Name must be 100 characters or fewer.";
-  }
-
-  if (!email) {
-    errors.email = "Email is required.";
-  } else if (!EMAIL_RE.test(email)) {
-    errors.email = "Enter a valid email address.";
-  }
-
-  if (!form.password) {
-    errors.password = "Password is required.";
-  } else if (form.password.length < 8) {
-    errors.password = "Password must be at least 8 characters.";
-  } else if (form.password.length > 72) {
-    errors.password = "Password must be 72 characters or fewer.";
-  }
-
-  return errors;
-}
-
-function getErrorMessage(error) {
-  if (
-    typeof navigator !== "undefined" &&
-    !navigator.onLine
-  ) {
-    return "No internet connection. Please try again.";
-  }
-
-  if (/failed to fetch|network ?error|load failed/i.test(error.message || "")) {
-    return "Can't reach the server. Check your API URL and connection.";
-  }
-
-  if (error.status === 409) {
-    return error.message || "This email is already registered.";
-  }
-
-  if (error.status >= 500) {
-    return "Something went wrong on the server. Please try again.";
-  }
-
-  return error.message || "Registration failed. Please try again.";
-}
+const API_URL = import.meta.env.VITE_API_URL || "http://localhost:5000";
 
 export default function Register() {
   const navigate = useNavigate();
@@ -74,7 +14,6 @@ export default function Register() {
 
   const { isLoggedIn, login } = useAuth();
 
-  // Get originally requested page
   const redirectTo = location.state?.from?.pathname || "/";
 
   const [form, setForm] = useState({
@@ -83,35 +22,13 @@ export default function Register() {
     password: "",
   });
 
-  const [errors, setErrors] = useState({});
-  const [message, setMessage] = useState("");
   const [loading, setLoading] = useState(false);
+  const [message, setMessage] = useState("");
   const [showPassword, setShowPassword] = useState(false);
 
-  const refs = {
-    name: useRef(null),
-    email: useRef(null),
-    password: useRef(null),
-  };
+  const [googleRef, googleWidth] = useFitWidth(340);
 
-  function handleChange(event) {
-    const { name, value } = event.target;
-
-    setForm((previous) => ({
-      ...previous,
-      [name]: value,
-    }));
-
-    if (errors[name]) {
-      setErrors((previous) => ({
-        ...previous,
-        [name]: "",
-      }));
-    }
-
-    if (message) setMessage("");
-  }
-
+  // Handle normal registration
   async function handleSubmit(event) {
     event.preventDefault();
 
@@ -119,418 +36,227 @@ export default function Register() {
 
     setMessage("");
 
-    const foundErrors = validate(form);
-    setErrors(foundErrors);
+    const name = form.name.trim();
+    const email = form.email.trim().toLowerCase();
+    const password = form.password;
 
-    const firstInvalid = ["name", "email", "password"].find(
-      (key) => foundErrors[key]
-    );
+    if (!name || !email || !password) {
+      setMessage("Please fill in all fields.");
+      return;
+    }
 
-    if (firstInvalid) {
-      refs[firstInvalid].current?.focus();
+    if (name.length < 2) {
+      setMessage("Name must be at least 2 characters.");
+      return;
+    }
+
+    if (password.length < 8 || password.length > 72) {
+      setMessage("Password must be between 8 and 72 characters.");
       return;
     }
 
     setLoading(true);
 
-    const credentials = {
-      name: form.name.trim(),
-      email: form.email.trim().toLowerCase(),
-      password: form.password,
-    };
-
     try {
-      // 1. Create account
-      await registerUser(credentials);
-
-      // 2. Automatically log in
-      const result = await loginUser({
-        email: credentials.email,
-        password: credentials.password,
+      // Create account
+      await registerUser({
+        name,
+        email,
+        password,
       });
 
-      // 3. Validate response
+      // Automatically log in after registration
+      const result = await loginUser({
+        email,
+        password,
+      });
+
       if (!result?.token || !result?.user) {
         throw new Error(
-          "Account created, but automatic login failed. Please log in manually."
+          "Account created, but automatic login failed. Please log in."
         );
       }
 
-      // 4. Update authentication context
+      // Save authentication in existing AuthContext
       login(result.token, result.user);
 
-      // 5. Clear form
       setForm({
         name: "",
         email: "",
         password: "",
       });
 
-      // 6. Redirect to originally requested page
       navigate(redirectTo, { replace: true });
-
     } catch (error) {
-      setMessage(getErrorMessage(error));
+      setMessage(
+        error?.response?.data?.message ||
+          error?.message ||
+          "Registration failed. Please try again."
+      );
     } finally {
       setLoading(false);
     }
   }
 
+  // Handle Google registration
+  async function handleGoogleSuccess(response) {
+    if (!response?.credential || loading) return;
+
+    setMessage("");
+    setLoading(true);
+
+    try {
+      const result = await fetch(`${API_URL}/api/users/google-auth`, {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+        },
+        body: JSON.stringify({
+          credential: response.credential,
+        }),
+      });
+
+      const data = await result.json();
+
+      if (!result.ok) {
+        throw new Error(data.message || "Google registration failed.");
+      }
+
+      if (!data.token || !data.user) {
+        throw new Error("Invalid Google authentication response.");
+      }
+
+      // Save authentication in existing AuthContext
+      login(data.token, data.user);
+
+      navigate(redirectTo, { replace: true });
+    } catch (error) {
+      setMessage(
+        error.message || "Google registration failed. Please try again."
+      );
+    } finally {
+      setLoading(false);
+    }
+  }
+
+  function handleGoogleError() {
+    setMessage("Google sign-up failed. Please try again.");
+  }
+
+  // Already logged in
   if (isLoggedIn) {
     return (
-      <main className="ey-register-page">
-        <style>{registerCss}</style>
-
-        <div className="ey-register-card">
-          <h1 className="ey-register-title">
-            You're already logged in
-          </h1>
-
-          <p className="ey-register-subtitle">
-            Continue to your requested page.
-          </p>
-
-          <button
-            onClick={() =>
-              navigate(redirectTo, { replace: true })
-            }
-            className="ey-register-button"
-          >
-            Continue
-          </button>
-        </div>
-      </main>
+      <AuthShell
+        title="You're already logged in"
+        subtitle="Pick up where you left off."
+        footer={<Link to="/">Back to home</Link>}
+      >
+        <button
+          type="button"
+          className="au-btn"
+          onClick={() => navigate(redirectTo, { replace: true })}
+        >
+          Continue
+        </button>
+      </AuthShell>
     );
   }
 
   return (
-    <main className="ey-register-page">
-      <style>{registerCss}</style>
+    <AuthShell
+      title="Create your account"
+      subtitle="Sign up to ExportYard to send your enquiry."
+      footer={
+        <>
+          Already have an account? <Link to="/login">Log in</Link>
+        </>
+      }
+    >
+      {/* Google Registration */}
+      <div className="au-google" ref={googleRef}>
+        <GoogleLogin
+          onSuccess={handleGoogleSuccess}
+          onError={handleGoogleError}
+          text="signup_with"
+          shape="rectangular"
+          size="large"
+          width={googleWidth}
+        />
+      </div>
 
-      <div className="ey-register-card">
-        <p className="ey-register-eyebrow">
-          WELCOME TO EXPORTYARD
-        </p>
+      <div className="au-or" role="separator">or</div>
 
-        <h1 className="ey-register-title">
-          Create your account
-        </h1>
-
-        <p className="ey-register-subtitle">
-          Sign up to request quotes and track your orders.
-        </p>
-
-        <form
-          onSubmit={handleSubmit}
-          className="ey-register-form"
-          noValidate
-        >
-          {/* Name */}
-          <div className={`ey-register-field ${errors.name ? "has-error" : ""}`}>
-            <label htmlFor="register-name">Name</label>
-
+      {/* Normal Registration */}
+      <form className="au-form" onSubmit={handleSubmit} noValidate>
+        <div className="au-field">
+          <label htmlFor="reg-name">Full name</label>
+          <div className="au-input">
             <input
-              ref={refs.name}
-              id="register-name"
-              name="name"
+              id="reg-name"
               type="text"
-              placeholder="Your full name"
+              name="name"
+              placeholder="Enter your full name"
               value={form.name}
-              onChange={handleChange}
+              onChange={(e) => setForm({ ...form, name: e.target.value })}
               maxLength={100}
               autoComplete="name"
-              aria-invalid={!!errors.name}
               required
             />
-
-            {errors.name && (
-              <span className="ey-register-hint" role="alert">
-                {errors.name}
-              </span>
-            )}
           </div>
+        </div>
 
-          {/* Email */}
-          <div className={`ey-register-field ${errors.email ? "has-error" : ""}`}>
-            <label htmlFor="register-email">Email</label>
-
+        <div className="au-field">
+          <label htmlFor="reg-email">Email</label>
+          <div className="au-input">
             <input
-              ref={refs.email}
-              id="register-email"
-              name="email"
+              id="reg-email"
               type="email"
+              name="email"
               placeholder="you@company.com"
               value={form.email}
-              onChange={handleChange}
+              onChange={(e) => setForm({ ...form, email: e.target.value })}
               autoComplete="email"
-              aria-invalid={!!errors.email}
               required
             />
-
-            {errors.email && (
-              <span className="ey-register-hint" role="alert">
-                {errors.email}
-              </span>
-            )}
           </div>
+        </div>
 
-          {/* Password */}
-          <div className={`ey-register-field ${errors.password ? "has-error" : ""}`}>
-            <label htmlFor="register-password">Password</label>
-
-            <div className="ey-register-password">
-              <input
-                ref={refs.password}
-                id="register-password"
-                name="password"
-                type={showPassword ? "text" : "password"}
-                placeholder="At least 8 characters"
-                value={form.password}
-                onChange={handleChange}
-                maxLength={72}
-                autoComplete="new-password"
-                aria-invalid={!!errors.password}
-                required
-              />
-
-              <button
-                type="button"
-                className="ey-register-eye"
-                onClick={() => setShowPassword((value) => !value)}
-                aria-label={showPassword ? "Hide password" : "Show password"}
-              >
-                {showPassword ? (
-                  <EyeOff size={18} />
-                ) : (
-                  <Eye size={18} />
-                )}
-              </button>
-            </div>
-
-            {errors.password ? (
-              <span className="ey-register-hint" role="alert">
-                {errors.password}
-              </span>
-            ) : (
-              <span className="ey-register-help">
-                Use 8 to 72 characters.
-              </span>
-            )}
+        <div className="au-field">
+          <label htmlFor="reg-password">Password</label>
+          <div className="au-input has-btn">
+            <input
+              id="reg-password"
+              type={showPassword ? "text" : "password"}
+              name="password"
+              placeholder="At least 8 characters"
+              value={form.password}
+              onChange={(e) => setForm({ ...form, password: e.target.value })}
+              minLength={8}
+              maxLength={72}
+              autoComplete="new-password"
+              required
+            />
+            <button
+              type="button"
+              className="au-toggle"
+              onClick={() => setShowPassword((s) => !s)}
+              aria-pressed={showPassword}
+            >
+              {showPassword ? "Hide" : "Show"}
+            </button>
           </div>
+        </div>
 
-          {/* Error */}
-          {message && (
-            <div className="ey-register-error" role="alert">
-              {message}
-            </div>
-          )}
+        {message && (
+          <p role="alert" className="au-error">
+            {message}
+          </p>
+        )}
 
-          {/* Submit */}
-          <button
-            type="submit"
-            className="ey-register-button"
-            disabled={loading}
-          >
-            {loading ? "Creating account..." : "Create account"}
-          </button>
-        </form>
-
-        <p className="ey-register-footer">
-          Already have an account?{" "}
-          <Link
-            to="/login"
-            state={location.state}
-          >
-            Log in
-          </Link>
-        </p>
-      </div>
-    </main>
+        <button type="submit" className="au-btn" disabled={loading}>
+          {loading ? "Creating account..." : "Create account"}
+        </button>
+      </form>
+    </AuthShell>
   );
 }
-
-const registerCss = `
-.ey-register-page {
-  min-height: 65vh;
-  display: grid;
-  place-items: center;
-  padding: 6rem 1.25rem 3rem;
-  box-sizing: border-box;
-  color: #fff;
-  font-family: system-ui, sans-serif;
-  background:
-    radial-gradient(ellipse 70% 40% at 50% 100%, rgba(255,197,143,.2), transparent 70%),
-    linear-gradient(#0a1628 0%, #0f2a4a 55%, #0e4a64 100%);
-}
-
-.ey-register-card {
-  width: 100%;
-  max-width: 26rem;
-  box-sizing: border-box;
-  padding: 2rem 1.75rem;
-  border-radius: 18px;
-  background: rgba(10,22,40,.82);
-  border: 1px solid rgba(56,189,208,.22);
-  box-shadow: 0 30px 60px -24px rgba(0,0,0,.7);
-}
-
-.ey-register-eyebrow {
-  color: #ffc58f;
-  font-size: .7rem;
-  font-weight: 800;
-  letter-spacing: 1.5px;
-}
-
-.ey-register-title {
-  margin: 0;
-  font-size: clamp(1.7rem, 5vw, 2.1rem);
-  letter-spacing: -.03em;
-}
-
-.ey-register-subtitle {
-  color: rgba(255,255,255,.7);
-  font-size: .9rem;
-  line-height: 1.5;
-}
-
-.ey-register-form {
-  display: flex;
-  flex-direction: column;
-  gap: 1.1rem;
-  margin-top: 1.6rem;
-}
-
-.ey-register-field {
-  display: flex;
-  flex-direction: column;
-  gap: .4rem;
-}
-
-.ey-register-field label {
-  font-size: .8rem;
-  font-weight: 600;
-  color: rgba(255,255,255,.8);
-}
-
-.ey-register-field input {
-  width: 100%;
-  box-sizing: border-box;
-  padding: .85rem 1rem;
-  border-radius: 10px;
-  border: 1px solid rgba(255,255,255,.18);
-  background: rgba(255,255,255,.07);
-  color: #fff;
-  font: inherit;
-  font-size: 16px;
-}
-
-.ey-register-field input::placeholder {
-  color: rgba(255,255,255,.4);
-}
-
-.ey-register-field input:focus {
-  outline: none;
-  border-color: #38bdd0;
-  box-shadow: 0 0 0 3px rgba(56,189,208,.25);
-}
-
-.ey-register-field.has-error input {
-  border-color: #ff7a66;
-}
-
-.ey-register-hint {
-  color: #ffb4a6;
-  font-size: .82rem;
-}
-
-.ey-register-help {
-  color: rgba(255,255,255,.5);
-  font-size: .8rem;
-}
-
-.ey-register-password {
-  position: relative;
-}
-
-.ey-register-password input {
-  padding-right: 3rem;
-}
-
-.ey-register-eye {
-  position: absolute;
-  top: 50%;
-  right: .35rem;
-  transform: translateY(-50%);
-  display: grid;
-  place-items: center;
-  width: 2.5rem;
-  height: 2.5rem;
-  border: 0;
-  border-radius: 8px;
-  background: transparent;
-  color: rgba(255,255,255,.65);
-  cursor: pointer;
-}
-
-.ey-register-eye:hover {
-  color: #fff;
-}
-
-.ey-register-error {
-  padding: .75rem 1rem;
-  border-radius: 10px;
-  border: 1px solid rgba(255,120,100,.45);
-  background: rgba(200,65,47,.18);
-  color: #ffd2c9;
-  font-size: .9rem;
-  line-height: 1.4;
-}
-
-.ey-register-button {
-  display: inline-block;
-  width: 100%;
-  box-sizing: border-box;
-  padding: .95rem 1.5rem;
-  border: 0;
-  border-radius: 10px;
-  background: #ffc58f;
-  color: #10222e;
-  font: inherit;
-  font-weight: 700;
-  text-align: center;
-  text-decoration: none;
-  cursor: pointer;
-}
-
-.ey-register-button:hover:not(:disabled) {
-  background: #ffd7b0;
-}
-
-.ey-register-button:disabled {
-  opacity: .65;
-  cursor: not-allowed;
-}
-
-.ey-register-footer {
-  margin: 1.4rem 0 0;
-  text-align: center;
-  font-size: .9rem;
-  color: rgba(255,255,255,.65);
-}
-
-.ey-register-footer a {
-  color: #38bdd0;
-  font-weight: 600;
-  text-decoration: none;
-}
-
-.ey-register-footer a:hover {
-  text-decoration: underline;
-}
-
-@media (max-width: 480px) {
-  .ey-register-page { padding: 5.5rem 1rem 2rem; }
-  .ey-register-card { padding: 1.6rem 1.25rem; }
-}
-`;
-

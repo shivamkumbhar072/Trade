@@ -195,11 +195,11 @@ const Navbar = () => {
             )}
 
             <a
-              href="/#contact"
+              href="/enquiry"
               className="nv-link nv-cta nv-m-cta"
               onClick={close}
             >
-              REQUEST A QUOTE
+              REQUEST ENQUIRY
             </a>
           </nav>
         )}
